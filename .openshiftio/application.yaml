@@ -1,0 +1,213 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: openliberty-rest-http-crud
+  annotations:
+    iconClass: icon-openliberty
+    tags: openliberty, java, microservice
+    template.openshift.io/provider-display-name: "IBM"
+    template.openshift.io/documentation-url: "https://launcher.fabric8.io/docs/openliberty-runtime.html"
+    description: >-
+      The Relational Database Backend example expands on the REST API Level 0 example to show how to perform create, read, update and delete (CRUD) operations on a PostgreSQL database using a simple HTTP API.
+parameters:
+- name: SOURCE_REPOSITORY_URL
+  description: The source URL for the application
+  displayName: Source URL
+  value: https://github.com/PurpleLiberty/example-rest-http-crud.git
+  required: true
+- name: SOURCE_REPOSITORY_REF
+  description: The branch name for the application
+  displayName: Source Branch
+  value: master
+  required: true
+- name: SOURCE_REPOSITORY_DIR
+  description: The location within the source repo of the application
+  displayName: Source Directory
+  value: .
+  required: true
+- name: GITHUB_WEBHOOK_SECRET
+  description: A secret string used to configure the GitHub webhook.
+  displayName: GitHub Webhook Secret
+  required: true
+  from: '[a-zA-Z0-9]{40}'
+  generate: expression
+- name: MAVEN_MIRROR_URL
+  description: URL of a Maven repository that will be used during build phase as a global Maven mirror
+  displayName: Maven Mirror URL
+  required: false
+objects:
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: openliberty-rest-http-crud
+  spec: {}
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: runtime
+  spec:
+    tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: docker.io/openliberty/open-liberty-s2i:19.0.0.9
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    name: openliberty-rest-http-crud
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: openliberty-rest-http-crud:latest
+    postCommit: {}
+    resources: {}
+    source:
+      git:
+        uri: ${SOURCE_REPOSITORY_URL}
+        ref: ${SOURCE_REPOSITORY_REF}
+      #contextDir: ${SOURCE_REPOSITORY_DIR}
+      type: Git
+    strategy:
+      sourceStrategy:
+        from:
+          kind: ImageStreamTag
+          name: runtime:latest
+        incremental: true
+        env:
+        - name: MAVEN_ARGS_APPEND
+          value: "-pl ${SOURCE_REPOSITORY_DIR}"
+        - name: MAVEN_MIRROR_URL
+          value: "${MAVEN_MIRROR_URL}"
+        - name: LIBERTY_RUNNABLE_JAR
+          value: rest-http-crud-openliberty.jar
+        - name: ARTIFACT_DIR
+          value: "${SOURCE_REPOSITORY_DIR}/target" 
+      type: Source
+    triggers:
+    - github:
+        secret: ${GITHUB_WEBHOOK_SECRET}
+      type: GitHub
+    - type: ConfigChange
+    - imageChange: {}
+      type: ImageChange
+  status:
+    lastVersion: 0
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    labels:
+      app: openliberty-rest-http-crud
+      group: io.openliberty.example
+    name: my-database-secret
+  stringData:
+    user: luke
+    password: secret
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      expose: "true"
+      app: openliberty-rest-http-crud
+      group: io.openliberty.example
+    name: openliberty-rest-http-crud
+  spec:
+    ports:
+    - name: http
+      port: 9080
+      protocol: TCP
+      targetPort: 9080
+    selector:
+      app: openliberty-rest-http-crud
+      group: io.openliberty.example
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: openliberty-rest-http-crud
+      group: io.openliberty.example
+    name: openliberty-rest-http-crud
+  spec:
+    replicas: 1
+    revisionHistoryLimit: 2
+    selector:
+      app: openliberty-rest-http-crud
+      group: io.openliberty.example
+    strategy:
+      rollingParams:
+        timeoutSeconds: 3600
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          app: openliberty-rest-http-crud
+          group: io.openliberty.example
+      spec:
+        containers:
+        - env:
+          - name: DB_USERNAME
+            valueFrom:
+              secretKeyRef:
+                key: user
+                name: my-database-secret
+          - name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: password
+                name: my-database-secret
+          - name: GC_MAX_METASPACE_SIZE
+            value: "150"
+          - name: KUBERNETES_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          image: openliberty-rest-http-crud:latest
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 9080
+              scheme: HTTP
+            initialDelaySeconds: 180
+          name: openliberty
+          ports:
+          - containerPort: 9080
+            name: http
+            protocol: TCP
+          - containerPort: 9779
+            name: prometheus
+            protocol: TCP
+          - containerPort: 8778
+            name: jolokia
+            protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9080
+              scheme: HTTP
+            initialDelaySeconds: 10
+          securityContext:
+            privileged: false
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - openliberty
+        from:
+          kind: ImageStreamTag
+          name: openliberty-rest-http-crud:latest
+      type: ImageChange
+- apiVersion: v1
+  kind: Route
+  metadata:
+    labels:
+      app: openliberty-rest-http-crud
+      group: io.openliberty.example
+    name: openliberty-rest-http-crud
+  spec:
+    port:
+      targetPort: 9080
+    to:
+      kind: Service
+      name: openliberty-rest-http-crud

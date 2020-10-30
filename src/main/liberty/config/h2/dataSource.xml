@@ -1,0 +1,11 @@
+<server>
+    <dataSource id="MyDS" jndiName="jdbc/MyDS" type="javax.sql.ConnectionPoolDataSource">
+        <jdbcDriver id="myDBDriver" libraryRef="H2Lib" javax.sql.ConnectionPoolDataSource="org.h2.jdbcx.JdbcDataSource" javax.sql.DataSource="org.h2.jdbcx.JdbcDataSource" javax.sql.XADataSource="org.h2.jdbcx.JdbcDataSource" />
+        <properties id="myDBProps" URL="jdbc:h2:mem:fruits;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE" user="sa" password="sa"  />
+    </dataSource>
+
+    <library id="H2Lib">
+        <fileset dir="${shared.resource.dir}/h2" includes="*" />
+    </library>
+</server>
+
